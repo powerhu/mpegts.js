@@ -16,6 +16,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import Log from '../utils/logger.js';
 
 //  MP4 boxes generator for ISO BMFF (ISO Base Media File Format, defined in ISO/IEC 14496-12)
 class MP4 {
@@ -453,7 +454,7 @@ class MP4 {
     static Opus(meta) {
         let channelCount = meta.channelCount;
         let sampleRate = meta.audioSampleRate;
-
+        Log.v('MP4Generator', 'Opus channel count: ' + channelCount + ', sample rate: ' + sampleRate);
         let data = new Uint8Array([
             0x00, 0x00, 0x00, 0x00,  // reserved(4)
             0x00, 0x00, 0x00, 0x01,  // reserved(2) + data_reference_index(2)
@@ -466,6 +467,15 @@ class MP4 {
             (sampleRate) & 0xFF,
             0x00, 0x00
         ]);
+        Log.v('MP4Generator', 'Opus box data: ' + data.toString());
+
+        if (meta.config) {
+            meta.config[4] = (sampleRate >>> 24) & 0xFF
+            meta.config[5] = (sampleRate >>> 16) & 0xFF
+            meta.config[6] = (sampleRate >>> 8) & 0xFF
+            meta.config[7] = (sampleRate ) & 0xFF
+            Log.v('MP4Generator', 'Opus default config meta: ' + meta.config.toString());
+        }
 
         return MP4.box(MP4.types.Opus, data, MP4.dOps(meta));
     }
@@ -543,6 +553,8 @@ class MP4 {
             0x00, 0x00,  // Global Gain : 2
             ... mapping
         ]);
+
+        Log.v('MP4Generator', 'Opus generate meta: ' + data.toString());
         return MP4.box(MP4.types.dOps, data);
     }
 

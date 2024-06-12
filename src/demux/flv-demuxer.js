@@ -492,25 +492,9 @@ class FLVDemuxer {
         let soundSpec = v.getUint8(0);
 
         let soundFormat = soundSpec >>> 4;
-        if (soundFormat === 9) { // Enhanced FLV
-            if (dataSize <= 5) {
-                Log.w(this.TAG, 'Flv: Invalid audio packet, missing AudioFourCC in Ehnanced FLV payload!');
-                return;
-            }
-            let packetType = soundSpec & 0x0F;
-            let fourcc = String.fromCharCode(... (new Uint8Array(arrayBuffer, dataOffset, dataSize)).slice(1, 5));
-
-            if (fourcc === 'Opus') {
-                this._parseOpusAudioPacket(arrayBuffer, dataOffset + 5, dataSize - 5, tagTimestamp, packetType);
-            } else {
-                this._onError(DemuxErrors.CODEC_UNSUPPORTED, 'Flv: Unsupported audio codec: ' + fourcc);
-            }
-
-            return;
-        }
         // Legacy FLV
 
-        if (soundFormat !== 2 && soundFormat !== 10) {  // MP3 or AAC
+        if (soundFormat !== 2 && soundFormat !== 10 && soundFormat != 13) {  // MP3 or AAC
             this._onError(DemuxErrors.CODEC_UNSUPPORTED, 'Flv: Unsupported audio codec idx: ' + soundFormat);
             return;
         }
@@ -605,6 +589,20 @@ class FLVDemuxer {
                 track.length += aacData.data.length;
             } else {
                 Log.e(this.TAG, `Flv: Unsupported AAC data type ${aacData.packetType}`);
+            }
+        } else if (soundFormat == 13) {
+            let result = {};
+            result.packetType = v.getUint8(1);
+
+            if (result.packetType == 0) {
+                this._parseOpusSequenceHeader(arrayBuffer, dataOffset + 2, dataSize - 2);
+            } else if (result.packetType == 1) {
+                this._parseOpusAudioData(arrayBuffer, dataOffset + 2, dataSize - 2 , tagTimestamp);
+            } else if (result.packetType == 2) {
+                // TODO: parse Opus metadata
+            } else {
+                this._onError(DemuxErrors.FORMAT_ERROR, `Flv: Invalid OPUS packet type ${packetType}`);
+                return;
             }
         } else if (soundFormat === 2) {  // MP3
             if (!meta.codec) {
@@ -850,19 +848,6 @@ class FLVDemuxer {
         return result;
     }
 
-    _parseOpusAudioPacket(arrayBuffer, dataOffset, dataSize, tagTimestamp, packetType) {
-       if (packetType === 0) {  // OpusSequenceHeader
-            this._parseOpusSequenceHeader(arrayBuffer, dataOffset, dataSize);
-        } else if (packetType === 1) {  // OpusCodedData
-            this._parseOpusAudioData(arrayBuffer, dataOffset, dataSize, tagTimestamp);
-        } else if (packetType === 2) {
-            // empty, Opus end of sequence
-        } else {
-            this._onError(DemuxErrors.FORMAT_ERROR, `Flv: Invalid video packet type ${packetType}`);
-            return;
-        }
-    }
-
     _parseOpusSequenceHeader(arrayBuffer, dataOffset, dataSize) {
         if (dataSize <= 16) {
             Log.w(this.TAG, 'Flv: Invalid OpusSequenceHeader, lack of data!');
@@ -888,8 +873,14 @@ class FLVDemuxer {
         // Identification Header
         let v = new DataView(arrayBuffer, dataOffset, dataSize);
         let channelCount = v.getUint8(8 + 1); // Opus Header + 1
+        let cs = `${channelCount}`;
+        Log.v(this.TAG, 'channel count: ' + cs);
         let samplingFrequence = v.getUint32(8 + 4, true); // Opus Header + 4
+        let ss = `${samplingFrequence}`;
+        Log.v(this.TAG, 'sampling count: ' + ss);
         let config = new Uint8Array(arrayBuffer, dataOffset + 8, dataSize - 8);
+        Log.v(this.TAG, 'opus config length: ' + config.byteLength);
+        Log.v(this.TAG, 'opus config data: ' + config.toString());
         config[0] = 0;
 
         let misc = {
@@ -950,7 +941,6 @@ class FLVDemuxer {
         let data = new Uint8Array(arrayBuffer, dataOffset, dataSize);
         let dts = this._timestampBase + tagTimestamp;
         let opusSample = {unit: data, length: data.byteLength, dts: dts, pts: dts};
-
         track.samples.push(opusSample);
         track.length += data.length;
     }
